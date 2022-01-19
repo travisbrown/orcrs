@@ -688,4 +688,30 @@ mod tests {
         assert_eq!(locations.len(), 3391);
         assert_eq!(null_count, 4898);
     }
+
+    #[test]
+    fn read_bool_column() {
+        let mut orc_file = OrcFile::open(TS_10K_EXAMPLE_PATH).unwrap();
+        let mut verified_count = 0;
+
+        for stripe in orc_file.get_stripe_info().unwrap() {
+            let column = orc_file.read_column(&stripe, 9).unwrap();
+
+            for row_index in 0..stripe.get_row_count() as usize {
+                match column.get(row_index).unwrap() {
+                    Value::Bool(value) => {
+                        if value {
+                            verified_count += 1;
+                        }
+                    }
+                    Value::Null => {}
+                    other => {
+                        panic!("Unexpected value: {:?}", other);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(verified_count, 543);
+    }
 }
