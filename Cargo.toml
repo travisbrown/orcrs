@@ -2,7 +2,15 @@
 name = "orcrs"
 version = "0.1.0"
 authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+description = "An Apache ORC file reader for Rust"
+keywords = ["orc", "apache-orc"]
+categories = ["parser-implementations"]
+homepage = "https://github.com/travisbrown/orcrs"
+repository = "https://github.com/travisbrown/orcrs"
+license-file = "LICENSE"
+readme = "README.md"
 edition = "2021"
+exclude = [ ".github/*", "examples/*", "test-gen/*" ]
 
 [dependencies]
 bit-vec = "0.6"
