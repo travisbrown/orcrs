@@ -1,0 +1,21 @@
+[package]
+name = "orcrs"
+version = "0.1.0"
+authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+bit-vec = "0.6"
+clap = { version = "3.0", features = ["derive"] } # Only for CLI tools
+csv = "1.0" # Only for CLI tools
+flate2 = "1.0"
+integer-encoding = "3.0"
+log = "0.4" # Only for CLI tools
+protobuf = "2.25"
+simplelog = "0.11" # Only for CLI tools
+thiserror = "1.0"
+zstd = "0.9"
+
+[build-dependencies]
+protobuf-codegen-pure = "2.25"
+reqwest = { version = "0.11", features = ["blocking"] }
