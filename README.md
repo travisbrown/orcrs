@@ -148,9 +148,12 @@ You'll need to install [Rust and Cargo][cargo] to build the project. Once you've
 check out this repository and run `cargo test` (to run the tests) and `cargo build --release` (to
 build the command-line tool, which will be available as `target/release/orcrs`).
 
-The [Protobuf schemas for the metadata in the ORC file][orc-proto] are not distributed with this
+~~The [Protobuf schemas for the metadata in the ORC file][orc-proto] are not distributed with this
 repository, but they will be downloaded to `$OUT_DIR/proto/` during the build. You can update this file
-as needed either manually or by changing the commit in `build.rs`.
+as needed either manually or by changing the commit in `build.rs`.~~ I got frustrated after 15 minutes
+of trying to figure out how to make the Protobuf code generation work properly with the build, so it's
+gone. You'll need to copy the `scripts/build.rs` file into the project directory in order to update the
+Protobuf schemas (but this shouldn't be necessary very often).
 
 This repository also includes a Java project with some code that I used for generating ORC test data
 during development.
