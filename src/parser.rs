@@ -722,7 +722,7 @@ mod tests {
         test_compression_ts_1k(CompressionKind::ZLIB);
     }
 
-    #[ignore]
+    #[test]
     fn test_compression_ts_1k_none() {
         test_compression_ts_1k(CompressionKind::NONE);
     }
