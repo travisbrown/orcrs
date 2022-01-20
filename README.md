@@ -171,7 +171,7 @@ Eventually it'd be nice to have Rust bindings for the C++ API, and I may end up 
 
 ## License
 
-This software is published under the [Anti-Capitalist Software License][acsl].
+This software is published under the [Anti-Capitalist Software License][acsl] (v. 1.4).
 
 [acsl]: https://anticapitalist.software/
 [apache-orc]: https://orc.apache.org/
