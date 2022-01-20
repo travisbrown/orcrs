@@ -608,7 +608,7 @@ mod tests {
     use crate::value::Value;
     use std::collections::HashSet;
 
-    const TS_10K_EXAMPLE_PATH: &str = "examples/ts-10k-2020-09-20.orc";
+    const TS_10K_EXAMPLE_PATH: &str = "examples/ts-10k-zstd-2020-09-20.orc";
 
     #[test]
     fn read_u64_column() {
