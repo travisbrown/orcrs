@@ -36,20 +36,27 @@ impl Decompressor {
     ) -> Result<Decompressor, Error> {
         file.seek(pos)?;
 
-        let (is_original, chunk_len) = Self::read_header(&mut file)?;
-
-        let chunk_compression = if is_original {
-            CompressionKind::NONE
+        let (chunk_compression, chunk_len, remaining) = if compression == CompressionKind::NONE {
+            (compression, len, 0)
         } else {
-            compression
+            let (is_original, chunk_len) = Self::read_header(&mut file)?;
+
+            let chunk_compression = if is_original {
+                CompressionKind::NONE
+            } else {
+                compression
+            };
+
+            (chunk_compression, chunk_len, len - (chunk_len + 3))
         };
+
         let file = file.take(chunk_len);
         let decoder = Self::open_decoder(file, chunk_compression)?;
 
         Ok(Decompressor {
             decoder: Some(decoder),
             compression,
-            remaining: len - (chunk_len + 3),
+            remaining,
         })
     }
 
