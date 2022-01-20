@@ -255,32 +255,24 @@ fn read_u64_be_bytes(bytes: &[u8], byte_width: u8) -> Option<u64> {
 }
 
 fn read_u64_be_bits(bytes: &[u8], bit_offset: u64, bit_width: u8) -> Option<u64> {
-    if bit_width > 64 || bytes.len() < bits_to_bytes(bit_offset + bit_width as u64) as usize {
+    let bits_needed = (bit_offset + bit_width as u64) as usize;
+    let bits_leftover = bits_needed % 8;
+    let bytes_needed = (bits_needed / 8) + if bits_leftover == 0 { 0 } else { 1 };
+
+    if bit_width > 64 || bytes.len() < bytes_needed {
         None
     } else {
-        let mut current_byte = bit_offset / 8;
-        let mut current_bit = bit_offset % 8;
-        let mut value: u64 = 0;
+        let current_byte = (bit_offset / 8) as usize;
+        let current_bit = bit_offset % 8;
+        let mut value = (bytes[current_byte] & (255 >> current_bit)) as u64;
 
-        if current_bit == 0 && bit_width % 8 == 0 {
-            for b in bytes[current_byte as usize..].iter().take(bit_width as usize / 8) {
-                value *= 256;
-                value += *b as u64;
-            }
-        } else {
-            for _ in 0..bit_width as usize {
-                let b = bytes[current_byte as usize];
-                let j = current_bit;
-                value *= 2;
-                value += ((b >> (7 - j)) & 0b0000_0001) as u64;
+        for i in 1..(bytes_needed - current_byte) {
+            value *= 256;
+            value += bytes[current_byte + i] as u64;
+        }
 
-                if current_bit == 7 {
-                    current_byte += 1;
-                    current_bit = 0;
-                } else {
-                    current_bit += 1;
-                }
-            }
+        if bits_leftover != 0 {
+            value >>= 8 - bits_leftover;
         }
 
         Some(value)
