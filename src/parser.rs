@@ -609,6 +609,8 @@ mod tests {
     use std::collections::HashSet;
 
     const TS_10K_EXAMPLE_PATH: &str = "examples/ts-10k-zstd-2020-09-20.orc";
+    const TS_1K_ZLIB_PATH: &str = "examples/ts-1k-zlib-2020-09-20.orc";
+    const TS_1K_NONE_PATH: &str = "examples/ts-1k-none-2020-09-20.orc";
 
     #[test]
     fn read_u64_column() {
@@ -637,7 +639,7 @@ mod tests {
     fn read_utf8_direct_column() {
         let mut orc_file = OrcFile::open(TS_10K_EXAMPLE_PATH).unwrap();
         let mut names = HashSet::new();
-        let mut null_count = 0;
+        let mut name_null_count = 0;
 
         for stripe in orc_file.get_stripe_info().unwrap() {
             let column = orc_file.read_column(&stripe, 4).unwrap();
@@ -648,7 +650,7 @@ mod tests {
                         names.insert(value.to_string());
                     }
                     Value::Null => {
-                        null_count += 1;
+                        name_null_count += 1;
                     }
                     other => {
                         panic!("Unexpected value: {:?}", other);
@@ -658,14 +660,14 @@ mod tests {
         }
 
         assert_eq!(names.len(), 8670);
-        assert_eq!(null_count, 0);
+        assert_eq!(name_null_count, 0);
     }
 
     #[test]
     fn read_utf8_dictionary_column() {
         let mut orc_file = OrcFile::open(TS_10K_EXAMPLE_PATH).unwrap();
         let mut locations = HashSet::new();
-        let mut null_count = 0;
+        let mut location_null_count = 0;
 
         for stripe in orc_file.get_stripe_info().unwrap() {
             let column = orc_file.read_column(&stripe, 6).unwrap();
@@ -676,7 +678,7 @@ mod tests {
                         locations.insert(value.to_string());
                     }
                     Value::Null => {
-                        null_count += 1;
+                        location_null_count += 1;
                     }
                     other => {
                         panic!("Unexpected value: {:?}", other);
@@ -686,7 +688,7 @@ mod tests {
         }
 
         assert_eq!(locations.len(), 3391);
-        assert_eq!(null_count, 4898);
+        assert_eq!(location_null_count, 4898);
     }
 
     #[test]
@@ -713,5 +715,88 @@ mod tests {
         }
 
         assert_eq!(verified_count, 543);
+    }
+
+    #[test]
+    fn test_compression_ts_1k_zlib() {
+        test_compression_ts_1k(CompressionKind::ZLIB);
+    }
+
+    #[ignore]
+    fn test_compression_ts_1k_none() {
+        test_compression_ts_1k(CompressionKind::NONE);
+    }
+
+    fn test_compression_ts_1k(compression: CompressionKind) {
+        let orc_file_path = match compression {
+            CompressionKind::ZLIB => TS_1K_ZLIB_PATH,
+            CompressionKind::NONE => TS_1K_NONE_PATH,
+            other => panic!("No example data for compression type {:?}", other),
+        };
+        let mut orc_file = OrcFile::open(orc_file_path).unwrap();
+        let mut user_ids = HashSet::new();
+        let mut names = HashSet::new();
+        let mut name_null_count = 0;
+        let mut locations = HashSet::new();
+        let mut location_null_count = 0;
+        let mut verified_count = 0;
+
+        for stripe in orc_file.get_stripe_info().unwrap() {
+            let user_id_column = orc_file.read_column(&stripe, 0).unwrap();
+            let name_column = orc_file.read_column(&stripe, 4).unwrap();
+            let location_column = orc_file.read_column(&stripe, 6).unwrap();
+            let verified_column = orc_file.read_column(&stripe, 9).unwrap();
+
+            for row_index in 0..stripe.get_row_count() as usize {
+                match user_id_column.get(row_index).unwrap() {
+                    Value::U64(value) => {
+                        user_ids.insert(value);
+                    }
+                    other => {
+                        panic!("Unexpected value: {:?}", other);
+                    }
+                }
+                match name_column.get(row_index).unwrap() {
+                    Value::Utf8(value) => {
+                        names.insert(value.to_string());
+                    }
+                    Value::Null => {
+                        name_null_count += 1;
+                    }
+                    other => {
+                        panic!("Unexpected value: {:?}", other);
+                    }
+                }
+                match location_column.get(row_index).unwrap() {
+                    Value::Utf8(value) => {
+                        locations.insert(value.to_string());
+                    }
+                    Value::Null => {
+                        location_null_count += 1;
+                    }
+                    other => {
+                        panic!("Unexpected value: {:?}", other);
+                    }
+                }
+                match verified_column.get(row_index).unwrap() {
+                    Value::Bool(value) => {
+                        if value {
+                            verified_count += 1;
+                        }
+                    }
+                    Value::Null => {}
+                    other => {
+                        panic!("Unexpected value: {:?}", other);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(user_ids.len(), 1682);
+        assert_eq!(names.len(), 1671);
+        assert_eq!(name_null_count, 0);
+        assert_eq!(locations.len(), 721);
+        assert_eq!(location_null_count, 931);
+        assert_eq!(verified_count, 114);
     }
 }
