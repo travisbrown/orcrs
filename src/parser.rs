@@ -439,6 +439,10 @@ impl OrcFile {
             .collect()
     }
 
+    pub fn get_postscript(&self) -> &PostScript {
+        &self.postscript
+    }
+
     pub fn get_footer(&self) -> &Footer {
         &self.footer
     }
@@ -605,12 +609,42 @@ impl OrcFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::Value;
+    use crate::{
+        proto::orc_proto::{CompressionKind, PostScript},
+        value::Value,
+    };
     use std::collections::HashSet;
 
     const TS_10K_EXAMPLE_PATH: &str = "examples/ts-10k-zstd-2020-09-20.orc";
     const TS_1K_ZLIB_PATH: &str = "examples/ts-1k-zlib-2020-09-20.orc";
     const TS_1K_NONE_PATH: &str = "examples/ts-1k-none-2020-09-20.orc";
+
+    #[test]
+    fn get_postscript() {
+        let orc_file = OrcFile::open(TS_10K_EXAMPLE_PATH).unwrap();
+        let postscript = orc_file.get_postscript();
+
+        let mut expected = PostScript::default();
+        expected.set_footerLength(1065);
+        expected.set_compression(CompressionKind::ZSTD);
+        expected.set_compressionBlockSize(262144);
+        expected.set_version(vec![0, 12]);
+        expected.set_metadataLength(909);
+        expected.set_writerVersion(9);
+        expected.set_magic("ORC".to_string());
+
+        assert_eq!(*postscript, expected);
+    }
+
+    #[test]
+    fn get_footer() {
+        let orc_file = OrcFile::open(TS_10K_EXAMPLE_PATH).unwrap();
+        let footer = orc_file.get_footer();
+
+        assert_eq!(footer.get_headerLength(), 3);
+        assert_eq!(footer.get_contentLength(), 937322);
+        assert_eq!(footer.get_stripes().len(), 1);
+    }
 
     #[test]
     fn read_u64_column() {
