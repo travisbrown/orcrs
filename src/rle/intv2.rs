@@ -260,22 +260,29 @@ fn read_u64_be_bits(bytes: &[u8], bit_offset: u64, bit_width: u8) -> Option<u64>
     } else {
         let mut current_byte = bit_offset / 8;
         let mut current_bit = bit_offset % 8;
-
         let mut value: u64 = 0;
 
-        for _ in 0..bit_width as usize {
-            let b = bytes[current_byte as usize];
-            let j = current_bit;
-            value *= 2;
-            value += ((b >> (7 - j)) & 0b0000_0001) as u64;
+        if current_bit == 0 && bit_width % 8 == 0 {
+            for b in bytes[current_byte as usize..].iter().take(bit_width as usize / 8) {
+                value *= 256;
+                value += *b as u64;
+            }
+        } else {
+            for _ in 0..bit_width as usize {
+                let b = bytes[current_byte as usize];
+                let j = current_bit;
+                value *= 2;
+                value += ((b >> (7 - j)) & 0b0000_0001) as u64;
 
-            if current_bit == 7 {
-                current_byte += 1;
-                current_bit = 0;
-            } else {
-                current_bit += 1;
+                if current_bit == 7 {
+                    current_byte += 1;
+                    current_bit = 0;
+                } else {
+                    current_bit += 1;
+                }
             }
         }
+
         Some(value)
     }
 }
