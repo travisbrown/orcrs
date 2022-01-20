@@ -44,7 +44,7 @@ much cheaper and easier to process or query the data.
 
 AWS's [Athena][athena] lets you run SQL queries directly against ORC files stored in S3, for example.
 You can also use Athena to process CSV files in S3, but running _any_ SQL query against compressed CSV
-files for the entire Twitter Stream Grab would cost at least $0.50 (since all of the two or three terabytes
+files for the entire Twitter Stream Grab would cost at least $2.50 (since all of the two or three terabytes
 of compressed data have to be scanned), while querying ORC in Athena generally costs a tiny fraction of that,
 since the ORC format makes it possible to avoid scanning data that isn't relevant to the query.
 
