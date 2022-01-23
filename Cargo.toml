@@ -22,7 +22,7 @@ log = "0.4" # Only for CLI tools
 protobuf = "2.25"
 simplelog = "0.11" # Only for CLI tools
 thiserror = "1.0"
-zstd = "0.9"
+zstd = "0.10"
 
 [build-dependencies]
 protobuf-codegen-pure = "2.25"
