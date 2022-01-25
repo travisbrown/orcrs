@@ -68,9 +68,6 @@ impl<'a> Value<'a> {
     }
 
     pub fn is_null(&self) -> bool {
-        match self {
-            Self::Null => true,
-            _ => false,
-        }
+        matches!(self, Self::Null)
     }
 }
