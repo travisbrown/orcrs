@@ -28,57 +28,47 @@ fn main() -> Result<(), Error> {
         } => {
             let mut writer = csv::Writer::from_writer(std::io::stdout());
             let mut orc_file = OrcFile::open(&path)?;
-            let column_indices = columns.and_then(|value| parse_column_indices(&value));
+
+            let footer = orc_file.get_footer();
+            let struct_type = footer
+                .get_types()
+                .get(0)
+                .expect("Could not determine struct type");
+
+            let column_indices = match columns.and_then(|value| parse_column_indices(&value)) {
+                Some(ref value) => value.clone(),
+                None => (0..struct_type.get_fieldNames().len()).collect(),
+            };
 
             if header {
-                let footer = orc_file.get_footer();
-
-                if let Some(field_names) = footer.get_types().get(0).and_then(|struct_type| {
-                    let column_indices = match column_indices {
-                        Some(ref value) => value.clone(),
-                        None => (0..struct_type.get_fieldNames().len() as u32).collect(),
-                    };
-                    column_indices
-                        .iter()
-                        .map(|i| struct_type.get_fieldNames().get(*i as usize))
-                        .collect::<Option<Vec<_>>>()
-                }) {
+                if let Some(field_names) = column_indices
+                    .iter()
+                    .map(|i| struct_type.get_fieldNames().get(*i))
+                    .collect::<Option<Vec<_>>>()
+                {
                     writer.write_record(field_names)?;
                 } else {
                     log::warn!("A header was requested but field names could not be found.")
                 }
             }
 
-            for (stripe_index, stripe_info) in orc_file.get_stripe_info()?.iter().enumerate() {
-                let column_indices = match column_indices {
-                    Some(ref value) => value.clone(),
-                    None => (0..stripe_info.get_column_count() as u32).collect(),
-                };
-                let columns = column_indices
-                    .iter()
-                    .map(|i| orc_file.read_column(stripe_info, *i))
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                for row_index in 0..stripe_info.get_row_count() as usize {
-                    let record = columns
+            let records = orc_file
+                .map_rows(&column_indices, |values| {
+                    values
                         .iter()
-                        .zip(&column_indices)
-                        .map(|(column, column_index)| {
-                            match column.get(row_index).ok_or(Error::MissingValue {
-                                stripe: stripe_index as u64,
-                                row: row_index as u64,
-                                column: *column_index as u64,
-                            })? {
-                                Value::Null => Ok(null_string_value.clone()),
-                                Value::Bool(value) => Ok(value.to_string()),
-                                Value::U64(value) => Ok(value.to_string()),
-                                Value::Utf8(value) => Ok(value.to_string()),
-                            }
+                        .map(|value| match value {
+                            Value::Null => Ok(null_string_value.clone()),
+                            Value::Bool(value) => Ok(value.to_string()),
+                            Value::U64(value) => Ok(value.to_string()),
+                            Value::Utf8(value) => Ok(value.to_string()),
                         })
-                        .collect::<Result<Vec<_>, Error>>()?;
+                        .collect::<Result<Vec<_>, _>>()
+                })?
+                .collect::<Result<Vec<_>, Error>>()?;
 
-                    writer.write_record(record)?;
-                }
+            for record in records {
+                let clean = record.iter().map(|value| escape(value)).collect::<Vec<_>>();
+                writer.write_record(clean)?;
             }
 
             writer.flush()?;
@@ -141,6 +131,10 @@ enum Command {
     },
 }
 
+fn escape(input: &str) -> String {
+    input.replace("\n", "\\n")
+}
+
 fn select_log_level_filter(verbosity: i32) -> LevelFilter {
     match verbosity {
         0 => LevelFilter::Off,
@@ -161,10 +155,10 @@ fn init_logging(verbosity: i32) -> Result<(), log::SetLoggerError> {
     )
 }
 
-fn parse_column_indices(input: &str) -> Option<Vec<u32>> {
+fn parse_column_indices(input: &str) -> Option<Vec<usize>> {
     match input
         .split(',')
-        .map(|value| value.trim().parse::<u32>())
+        .map(|value| value.trim().parse::<usize>())
         .collect::<Result<Vec<_>, _>>()
     {
         Ok(values) => Some(values),
