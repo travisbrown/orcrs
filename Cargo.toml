@@ -10,7 +10,7 @@ repository = "https://github.com/travisbrown/orcrs"
 license-file = "LICENSE"
 readme = "README.md"
 edition = "2021"
-exclude = [ ".github/*", "examples/*", "test-gen/*", "scripts/*" ]
+exclude = [ ".github/*", ".codecov.yml", "examples/*", "test-gen/*", "scripts/*" ]
 
 [dependencies]
 bit-vec = "0.6"
