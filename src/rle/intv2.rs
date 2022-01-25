@@ -27,7 +27,14 @@ fn append_next_u64s(bytes: &[u8], current_values: &mut Vec<u64>, signed: bool) -
             if bytes.len() < expected {
                 None
             } else {
-                let value = read_u64_be_bytes(&bytes[current..], width)?;
+                let encoded_value = read_u64_be_bytes(&bytes[current..], width)?;
+
+                let value = if signed {
+                    zigzag_to_twos_complement(encoded_value)
+                } else {
+                    encoded_value
+                };
+
                 for _ in 0..repeat_count as usize {
                     current_values.push(value);
                 }
@@ -41,7 +48,17 @@ fn append_next_u64s(bytes: &[u8], current_values: &mut Vec<u64>, signed: bool) -
             } else {
                 for i in 0..len as usize {
                     let bit_offset = i as u64 * width as u64;
-                    let value = read_u64_be_bits(&bytes[current..], bit_offset, width)?;
+                    let encoded_value = read_u64_be_bits(&bytes[current..], bit_offset, width)?;
+
+                    let value = if signed {
+                        zigzag_to_twos_complement(encoded_value)
+                    } else {
+                        encoded_value
+                    };
+
+                    if value == 1525349721750552576 {
+                        println!("DIRECT: {}", value);
+                    }
                     current_values.push(value);
                 }
                 Some(expected)
@@ -320,6 +337,15 @@ fn closest_fixed_bits(bits: u8) -> u8 {
     }
 }
 
+fn zigzag_to_twos_complement(value: u64) -> u64 {
+    let result = value / 2;
+    if value & 0x0000_0001 == 0 {
+        result
+    } else {
+        !result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,7 +372,7 @@ mod tests {
         let expected = SHORT_REPEAT_OUTPUT.to_vec();
 
         let mut result = vec![];
-        append_next_u64s(&input, &mut result, true).unwrap();
+        append_next_u64s(&input, &mut result, false).unwrap();
 
         assert_eq!(result, expected);
     }
@@ -357,7 +383,7 @@ mod tests {
         let expected = DIRECT_OUTPUT.to_vec();
 
         let mut result = vec![];
-        append_next_u64s(&input, &mut result, true).unwrap();
+        append_next_u64s(&input, &mut result, false).unwrap();
 
         assert_eq!(result, expected);
     }
@@ -368,7 +394,7 @@ mod tests {
         let expected = PATCHED_BASE_OUTPUT.to_vec();
 
         let mut result = vec![];
-        append_next_u64s(&input, &mut result, true).unwrap();
+        append_next_u64s(&input, &mut result, false).unwrap();
 
         assert_eq!(result, expected);
     }

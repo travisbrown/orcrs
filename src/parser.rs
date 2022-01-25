@@ -613,11 +613,15 @@ mod tests {
         proto::orc_proto::{CompressionKind, PostScript},
         value::Value,
     };
+    use serde_derive::Deserialize;
     use std::collections::HashSet;
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
 
     const TS_10K_EXAMPLE_PATH: &str = "examples/ts-10k-zstd-2020-09-20.orc";
     const TS_1K_ZLIB_PATH: &str = "examples/ts-1k-zlib-2020-09-20.orc";
     const TS_1K_NONE_PATH: &str = "examples/ts-1k-none-2020-09-20.orc";
+    const TS_1K_JSON_PATH: &str = "examples/ts-1k-2020-09-20.ndjson";
 
     #[test]
     fn get_postscript() {
@@ -774,6 +778,7 @@ mod tests {
         let mut locations = HashSet::new();
         let mut location_null_count = 0;
         let mut verified_count = 0;
+        let mut user_rows = vec![];
 
         for stripe in orc_file.get_stripe_info().unwrap() {
             let user_id_column = orc_file.read_column(&stripe, 0).unwrap();
@@ -792,15 +797,18 @@ mod tests {
                 let id = user_id_column.get(row_index).unwrap().as_u64().unwrap();
                 let status_id = status_id_column.get(row_index).unwrap().as_u64().unwrap();
                 let timestamp = timestamp_column.get(row_index).unwrap().as_u64().unwrap();
-                let screen_name = screen_name_column.get(row_index).unwrap().as_str().unwrap();
+                let screen_name = screen_name_column
+                    .get(row_index)
+                    .unwrap()
+                    .as_string()
+                    .unwrap();
                 let name = name_column
                     .get(row_index)
                     .and_then(|v| v.as_nullable_string())
                     .unwrap();
                 let url = url_column
                     .get(row_index)
-                    .unwrap()
-                    .as_nullable_str()
+                    .and_then(|v| v.as_nullable_string())
                     .unwrap();
                 let location = location_column
                     .get(row_index)
@@ -826,7 +834,7 @@ mod tests {
                     .unwrap();
 
                 user_ids.insert(id);
-                match name {
+                match &name {
                     Some(value) => {
                         names.insert(value.to_string());
                     }
@@ -834,7 +842,7 @@ mod tests {
                         name_null_count += 1;
                     }
                 }
-                match location {
+                match &location {
                     Some(value) => {
                         locations.insert(value.to_string());
                     }
@@ -845,6 +853,20 @@ mod tests {
                 if let Some(true) = verified {
                     verified_count += 1;
                 }
+
+                user_rows.push(UserRow {
+                    id: id,
+                    status_id: status_id,
+                    timestamp: timestamp,
+                    screen_name,
+                    name,
+                    url,
+                    location,
+                    description,
+                    profile_image_url,
+                    verified,
+                    followers_count: followers_count.map(|v| v as u32),
+                });
             }
         }
 
@@ -854,5 +876,35 @@ mod tests {
         assert_eq!(locations.len(), 721);
         assert_eq!(location_null_count, 931);
         assert_eq!(verified_count, 114);
+
+        for (result, expected) in user_rows.iter().zip(load_ts_1k_json()) {
+            assert_eq!(*result, expected);
+        }
+    }
+
+    #[derive(Deserialize, Debug, Eq, PartialEq)]
+    struct UserRow {
+        id: u64,
+        status_id: u64,
+        timestamp: u64,
+        screen_name: String,
+        name: Option<String>,
+        url: Option<String>,
+        location: Option<String>,
+        description: Option<String>,
+        profile_image_url: Option<String>,
+        verified: Option<bool>,
+        followers_count: Option<u32>,
+    }
+
+    fn load_ts_1k_json() -> Vec<UserRow> {
+        let reader = BufReader::new(File::open(TS_1K_JSON_PATH).unwrap());
+
+        reader
+            .lines()
+            .map(|line| {
+                serde_json::from_str(&line.as_ref().unwrap()).expect(&format!("bad: {:?}", line))
+            })
+            .collect()
     }
 }
