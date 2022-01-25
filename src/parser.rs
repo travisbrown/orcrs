@@ -777,51 +777,73 @@ mod tests {
 
         for stripe in orc_file.get_stripe_info().unwrap() {
             let user_id_column = orc_file.read_column(&stripe, 0).unwrap();
+            let status_id_column = orc_file.read_column(&stripe, 1).unwrap();
+            let timestamp_column = orc_file.read_column(&stripe, 2).unwrap();
+            let screen_name_column = orc_file.read_column(&stripe, 3).unwrap();
             let name_column = orc_file.read_column(&stripe, 4).unwrap();
+            let url_column = orc_file.read_column(&stripe, 5).unwrap();
             let location_column = orc_file.read_column(&stripe, 6).unwrap();
+            let description_column = orc_file.read_column(&stripe, 7).unwrap();
+            let profile_image_url_column = orc_file.read_column(&stripe, 8).unwrap();
             let verified_column = orc_file.read_column(&stripe, 9).unwrap();
+            let followers_count_column = orc_file.read_column(&stripe, 10).unwrap();
 
             for row_index in 0..stripe.get_row_count() as usize {
-                match user_id_column.get(row_index).unwrap() {
-                    Value::U64(value) => {
-                        user_ids.insert(value);
-                    }
-                    other => {
-                        panic!("Unexpected value: {:?}", other);
-                    }
-                }
-                match name_column.get(row_index).unwrap() {
-                    Value::Utf8(value) => {
+                let id = user_id_column.get(row_index).unwrap().as_u64().unwrap();
+                let status_id = status_id_column.get(row_index).unwrap().as_u64().unwrap();
+                let timestamp = timestamp_column.get(row_index).unwrap().as_u64().unwrap();
+                let screen_name = screen_name_column.get(row_index).unwrap().as_str().unwrap();
+                let name = name_column
+                    .get(row_index)
+                    .and_then(|v| v.as_nullable_string())
+                    .unwrap();
+                let url = url_column
+                    .get(row_index)
+                    .unwrap()
+                    .as_nullable_str()
+                    .unwrap();
+                let location = location_column
+                    .get(row_index)
+                    .and_then(|v| v.as_nullable_string())
+                    .unwrap();
+                let description = description_column
+                    .get(row_index)
+                    .and_then(|v| v.as_nullable_string())
+                    .unwrap();
+                let profile_image_url = profile_image_url_column
+                    .get(row_index)
+                    .and_then(|v| v.as_nullable_string())
+                    .unwrap();
+                let verified = verified_column
+                    .get(row_index)
+                    .unwrap()
+                    .as_nullable_bool()
+                    .unwrap();
+                let followers_count = followers_count_column
+                    .get(row_index)
+                    .unwrap()
+                    .as_nullable_u64()
+                    .unwrap();
+
+                user_ids.insert(id);
+                match name {
+                    Some(value) => {
                         names.insert(value.to_string());
                     }
-                    Value::Null => {
+                    None => {
                         name_null_count += 1;
                     }
-                    other => {
-                        panic!("Unexpected value: {:?}", other);
-                    }
                 }
-                match location_column.get(row_index).unwrap() {
-                    Value::Utf8(value) => {
+                match location {
+                    Some(value) => {
                         locations.insert(value.to_string());
                     }
-                    Value::Null => {
+                    None => {
                         location_null_count += 1;
                     }
-                    other => {
-                        panic!("Unexpected value: {:?}", other);
-                    }
                 }
-                match verified_column.get(row_index).unwrap() {
-                    Value::Bool(value) => {
-                        if value {
-                            verified_count += 1;
-                        }
-                    }
-                    Value::Null => {}
-                    other => {
-                        panic!("Unexpected value: {:?}", other);
-                    }
+                if let Some(true) = verified {
+                    verified_count += 1;
                 }
             }
         }
