@@ -5,6 +5,7 @@ use crate::{
     column::{BoolWriter, Column, PresentInfo, PresentInfoWriter},
     compress::{self, Decompressor},
     rle::{byte::ByteWriter, IntegerRleVersion},
+    value::Value,
 };
 use protobuf::Message;
 use std::fs::File;
@@ -34,7 +35,13 @@ pub enum Error {
     #[error("Invalid ORC file metadata")]
     InvalidMetadata,
     #[error("Invalid column index")]
-    InvalidColumnIndex(u32),
+    InvalidColumnIndex(usize),
+    #[error("Invalid value")]
+    InvalidValue {
+        stripe_index: usize,
+        column_index: usize,
+        row_index: usize,
+    },
     #[error("Invalid integer encoding")]
     InvalidIntegerEncoding,
     #[error("Invalid dictionary size")]
@@ -43,7 +50,7 @@ pub enum Error {
 
 #[derive(Debug)]
 pub struct StripeInfo {
-    row_count: u64,
+    row_count: usize,
     data_start: u64,
     data_len: u64,
     columns: Vec<ColumnInfo>,
@@ -54,7 +61,7 @@ impl StripeInfo {
         self.columns.len()
     }
 
-    pub fn get_row_count(&self) -> u64 {
+    pub fn get_row_count(&self) -> usize {
         self.row_count
     }
 
@@ -146,7 +153,25 @@ impl OrcFile {
         }
     }
 
-    fn read_null_runs(&mut self, start: u64, len: u64, row_count: u64) -> Result<Vec<u64>, Error> {
+    pub fn map_rows<T, E: From<Error>, F>(
+        &mut self,
+        columns: &[usize],
+        f: F,
+    ) -> Result<MappedRows<'_, F>, Error>
+    where
+        F: FnMut(&[Value<'_>]) -> Result<T, E>,
+    {
+        let stripe_info = self.get_stripe_info()?;
+
+        Ok(MappedRows::new(self, stripe_info, columns.to_vec(), f))
+    }
+
+    fn read_null_runs(
+        &mut self,
+        start: u64,
+        len: u64,
+        row_count: usize,
+    ) -> Result<Vec<u64>, Error> {
         let pos = SeekFrom::Start(start);
         let mut decompressor = Decompressor::open(
             self.take_file()?,
@@ -191,8 +216,8 @@ impl OrcFile {
         Ok(values)
     }
 
-    pub fn read_column(&mut self, stripe: &StripeInfo, column_id: u32) -> Result<Column, Error> {
-        if let Some(column_info) = stripe.columns.get(column_id as usize) {
+    pub fn read_column(&mut self, stripe: &StripeInfo, column_id: usize) -> Result<Column, Error> {
+        if let Some(column_info) = stripe.columns.get(column_id) {
             match column_info {
                 ColumnInfo::Bool {
                     offset,
@@ -474,7 +499,7 @@ impl OrcFile {
             .enumerate()
             .map(|(i, stripe_footer)| {
                 let stripe_orig_info = &self.footer.stripes[i];
-                let row_count = stripe_orig_info.get_numberOfRows();
+                let row_count = stripe_orig_info.get_numberOfRows() as usize;
                 let data_start = stripe_orig_info.get_offset() + stripe_orig_info.get_indexLength();
                 let data_len = stripe_orig_info.get_dataLength();
 
@@ -603,6 +628,94 @@ impl OrcFile {
                 })
             })
             .collect()
+    }
+}
+
+pub struct MappedRows<'a, F> {
+    file: &'a mut OrcFile,
+    stripe_info: Vec<StripeInfo>,
+    columns: Vec<usize>,
+    f: F,
+    data: Vec<Column>,
+    current_stripe: usize,
+    current_row: usize,
+}
+
+impl<'a, F> MappedRows<'a, F> {
+    fn new(
+        file: &'a mut OrcFile,
+        stripe_info: Vec<StripeInfo>,
+        columns: Vec<usize>,
+        f: F,
+    ) -> MappedRows<'a, F> {
+        Self {
+            file,
+            stripe_info,
+            columns,
+            f,
+            data: vec![],
+            current_stripe: 0,
+            current_row: 0,
+        }
+    }
+}
+
+impl<T, E, F> Iterator for MappedRows<'_, F>
+where
+    E: From<Error>,
+    F: FnMut(&[Value<'_>]) -> Result<T, E>,
+{
+    type Item = Result<T, E>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_stripe >= self.stripe_info.len() {
+            None
+        } else {
+            let stripe_info = &self.stripe_info[self.current_stripe];
+
+            if self.current_row >= stripe_info.get_row_count() {
+                self.data.clear();
+                self.current_stripe += 1;
+                self.current_row = 0;
+                self.next()
+            } else {
+                if self.current_row == 0 {
+                    for i in &self.columns {
+                        let column = match self.file.read_column(stripe_info, *i) {
+                            Ok(column) => column,
+                            Err(error) => {
+                                // Unrecoverable error.
+                                self.current_stripe = self.stripe_info.len();
+                                return Some(Err(E::from(error)));
+                            }
+                        };
+                        self.data.push(column);
+                    }
+                }
+
+                let mut values = Vec::with_capacity(self.data.len());
+
+                for (column, column_index) in self.data.iter().zip(&self.columns) {
+                    match column.get(self.current_row) {
+                        Some(value) => values.push(value),
+                        None => {
+                            let error = Error::InvalidValue {
+                                stripe_index: self.current_stripe,
+                                column_index: *column_index,
+                                row_index: self.current_row,
+                            };
+
+                            // Unrecoverable error.
+                            self.current_stripe = self.stripe_info.len();
+                            return Some(Err(E::from(error)));
+                        }
+                    }
+                }
+
+                self.current_row += 1;
+                Some((self.f)(&values))
+            }
+        }
     }
 }
 
@@ -772,92 +885,46 @@ mod tests {
             other => panic!("No example data for compression type {:?}", other),
         };
         let mut orc_file = OrcFile::open(orc_file_path).unwrap();
-        let mut user_ids = HashSet::new();
-        let mut names = HashSet::new();
-        let mut name_null_count = 0;
-        let mut locations = HashSet::new();
-        let mut location_null_count = 0;
-        let mut verified_count = 0;
-        let mut user_rows = vec![];
 
-        for stripe in orc_file.get_stripe_info().unwrap() {
-            let user_id_column = orc_file.read_column(&stripe, 0).unwrap();
-            let status_id_column = orc_file.read_column(&stripe, 1).unwrap();
-            let timestamp_column = orc_file.read_column(&stripe, 2).unwrap();
-            let screen_name_column = orc_file.read_column(&stripe, 3).unwrap();
-            let name_column = orc_file.read_column(&stripe, 4).unwrap();
-            let url_column = orc_file.read_column(&stripe, 5).unwrap();
-            let location_column = orc_file.read_column(&stripe, 6).unwrap();
-            let description_column = orc_file.read_column(&stripe, 7).unwrap();
-            let profile_image_url_column = orc_file.read_column(&stripe, 8).unwrap();
-            let verified_column = orc_file.read_column(&stripe, 9).unwrap();
-            let followers_count_column = orc_file.read_column(&stripe, 10).unwrap();
-
-            for row_index in 0..stripe.get_row_count() as usize {
-                let id = user_id_column.get(row_index).unwrap().as_u64().unwrap();
-                let status_id = status_id_column.get(row_index).unwrap().as_u64().unwrap();
-                let timestamp = timestamp_column.get(row_index).unwrap().as_u64().unwrap();
-                let screen_name = screen_name_column
-                    .get(row_index)
-                    .unwrap()
-                    .as_string()
+        let user_rows = orc_file
+            .map_rows(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], |values| {
+                let id = values.get(0).and_then(|value| value.as_u64()).unwrap();
+                let status_id = values.get(1).and_then(|value| value.as_u64()).unwrap();
+                let timestamp = values.get(2).and_then(|value| value.as_u64()).unwrap();
+                let screen_name = values.get(3).and_then(|value| value.as_string()).unwrap();
+                let name = values
+                    .get(4)
+                    .and_then(|value| value.as_nullable_string())
                     .unwrap();
-                let name = name_column
-                    .get(row_index)
-                    .and_then(|v| v.as_nullable_string())
+                let url = values
+                    .get(5)
+                    .and_then(|value| value.as_nullable_string())
                     .unwrap();
-                let url = url_column
-                    .get(row_index)
-                    .and_then(|v| v.as_nullable_string())
+                let location = values
+                    .get(6)
+                    .and_then(|value| value.as_nullable_string())
                     .unwrap();
-                let location = location_column
-                    .get(row_index)
-                    .and_then(|v| v.as_nullable_string())
+                let description = values
+                    .get(7)
+                    .and_then(|value| value.as_nullable_string())
                     .unwrap();
-                let description = description_column
-                    .get(row_index)
-                    .and_then(|v| v.as_nullable_string())
+                let profile_image_url = values
+                    .get(8)
+                    .and_then(|value| value.as_nullable_string())
                     .unwrap();
-                let profile_image_url = profile_image_url_column
-                    .get(row_index)
-                    .and_then(|v| v.as_nullable_string())
+                let verified = values
+                    .get(9)
+                    .and_then(|value| value.as_nullable_bool())
                     .unwrap();
-                let verified = verified_column
-                    .get(row_index)
-                    .unwrap()
-                    .as_nullable_bool()
-                    .unwrap();
-                let followers_count = followers_count_column
-                    .get(row_index)
-                    .unwrap()
-                    .as_nullable_u64()
+                let followers_count = values
+                    .get(10)
+                    .and_then(|value| value.as_nullable_u64())
                     .unwrap();
 
-                user_ids.insert(id);
-                match &name {
-                    Some(value) => {
-                        names.insert(value.to_string());
-                    }
-                    None => {
-                        name_null_count += 1;
-                    }
-                }
-                match &location {
-                    Some(value) => {
-                        locations.insert(value.to_string());
-                    }
-                    None => {
-                        location_null_count += 1;
-                    }
-                }
-                if let Some(true) = verified {
-                    verified_count += 1;
-                }
-
-                user_rows.push(UserRow {
-                    id: id,
-                    status_id: status_id,
-                    timestamp: timestamp,
+                Ok(UserRow {
+                    id,
+                    status_id,
+                    timestamp,
                     screen_name,
                     name,
                     url,
@@ -866,16 +933,11 @@ mod tests {
                     profile_image_url,
                     verified,
                     followers_count: followers_count.map(|v| v as u32),
-                });
-            }
-        }
-
-        assert_eq!(user_ids.len(), 1682);
-        assert_eq!(names.len(), 1671);
-        assert_eq!(name_null_count, 0);
-        assert_eq!(locations.len(), 721);
-        assert_eq!(location_null_count, 931);
-        assert_eq!(verified_count, 114);
+                })
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, Error>>()
+            .unwrap();
 
         for (result, expected) in user_rows.iter().zip(load_ts_1k_json()) {
             assert_eq!(*result, expected);

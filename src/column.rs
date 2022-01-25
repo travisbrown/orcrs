@@ -15,7 +15,7 @@ pub enum Column {
         indices: Vec<(u64, u64)>,
     },
     Bool {
-        row_count: u64,
+        row_count: usize,
         values: BitVec,
         nulls: Option<BitVec>,
     },
@@ -33,7 +33,7 @@ impl Column {
                 values,
                 nulls,
             } => {
-                if (row as u64) < *row_count {
+                if row < *row_count {
                     if let Some(nulls) = nulls {
                         if nulls[row] {
                             return Some(Value::Null);
@@ -204,7 +204,7 @@ impl Column {
 }
 
 pub struct BoolWriter {
-    row_count: u64,
+    row_count: usize,
     present_info: PresentInfo,
     values: BitVec,
     nulls: Option<BitVec>,
@@ -213,16 +213,16 @@ pub struct BoolWriter {
 }
 
 impl BoolWriter {
-    pub fn new(row_count: u64, present_info: PresentInfo) -> BoolWriter {
+    pub fn new(row_count: usize, present_info: PresentInfo) -> BoolWriter {
         let nulls = match present_info {
             PresentInfo::All => None,
-            PresentInfo::NullRuns(_) => Some(BitVec::with_capacity(row_count as usize)),
+            PresentInfo::NullRuns(_) => Some(BitVec::with_capacity(row_count)),
         };
 
         BoolWriter {
             row_count,
             present_info,
-            values: BitVec::with_capacity(row_count as usize),
+            values: BitVec::with_capacity(row_count),
             nulls,
             current_index: 0,
             current_present_index: 0,
@@ -305,9 +305,9 @@ pub struct PresentInfoWriter {
 }
 
 impl PresentInfoWriter {
-    pub fn new(row_count: u64) -> Self {
+    pub fn new(row_count: usize) -> Self {
         Self {
-            row_count,
+            row_count: row_count as u64,
             null_runs: Vec::with_capacity(PRESENT_VALUE_CAPACITY),
             current_total: 0,
             current_null_run_len: 0,
