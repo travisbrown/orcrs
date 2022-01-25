@@ -869,6 +869,33 @@ mod tests {
     }
 
     #[test]
+    fn test_map_rows_error() {
+        let mut orc_file = OrcFile::open(TS_1K_ZLIB_PATH).unwrap();
+
+        let result = orc_file
+            .map_rows(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], |values| {
+                let id = values.get(0).and_then(|value| value.as_u64()).unwrap();
+
+                // Let a couple of rows through successfully.
+                if id == 762674860875276288 || id == 1237648870118580224 {
+                    Ok(id)
+                } else {
+                    Err(Error::InvalidState)
+                }
+            })
+            .unwrap()
+            .collect::<Vec<_>>();
+
+        assert_eq!(result.len(), 1743);
+        assert_eq!(*result[0].as_ref().unwrap(), 762674860875276288);
+        assert_eq!(*result[1].as_ref().unwrap(), 1237648870118580224);
+
+        for value in &result[2..] {
+            assert!(value.is_err());
+        }
+    }
+
+    #[test]
     fn test_compression_ts_1k_zlib() {
         test_compression_ts_1k(CompressionKind::ZLIB);
     }
