@@ -1,6 +1,6 @@
 [package]
 name = "orcrs"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Travis Brown <travisrobertbrown@gmail.com>"]
 description = "An Apache ORC file reader for Rust"
 keywords = ["orc", "apache-orc"]
