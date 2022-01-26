@@ -1073,6 +1073,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_deserialize_invalid_field_names() {
+        let mut orc_file = OrcFile::open(TS_1K_ZLIB_PATH).unwrap();
+
+        let result = orc_file.deserialize::<BadUserRow>().collect::<Vec<_>>();
+
+        assert_eq!(result.len(), 1);
+        assert!(result[0].is_err());
+    }
+
+    #[derive(Deserialize, Debug, Eq, PartialEq)]
+    struct BadUserRow {
+        user_id: u64,
+        status_id: u64,
+    }
+
     #[derive(Deserialize, Debug, Eq, PartialEq)]
     struct UserRow {
         id: u64,
