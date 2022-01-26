@@ -107,6 +107,7 @@ pub struct OrcFile {
     postscript: PostScript,
     footer: Footer,
     type_kinds: Vec<Type_Kind>,
+    field_names: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -142,6 +143,12 @@ impl OrcFile {
             )?;
 
             let type_kinds = Self::extract_column_type_kinds(&footer)?;
+            let field_names = footer
+                .get_types()
+                .get(0)
+                .ok_or(Error::InvalidMetadata)?
+                .get_fieldNames()
+                .to_vec();
 
             Ok(OrcFile {
                 file: Some(file),
@@ -149,8 +156,13 @@ impl OrcFile {
                 postscript,
                 footer,
                 type_kinds,
+                field_names,
             })
         }
+    }
+
+    pub fn get_field_names(&self) -> &[String] {
+        &self.field_names
     }
 
     pub fn map_rows<T, E: From<Error>, F>(
@@ -735,6 +747,19 @@ mod tests {
     const TS_1K_ZLIB_PATH: &str = "examples/ts-1k-zlib-2020-09-20.orc";
     const TS_1K_NONE_PATH: &str = "examples/ts-1k-none-2020-09-20.orc";
     const TS_1K_JSON_PATH: &str = "examples/ts-1k-2020-09-20.ndjson";
+    const TS_FIELD_NAMES: [&str; 11] = [
+        "id",
+        "status_id",
+        "timestamp",
+        "screen_name",
+        "name",
+        "url",
+        "location",
+        "description",
+        "profile_image_url",
+        "verified",
+        "followers_count",
+    ];
 
     #[test]
     fn get_postscript() {
@@ -912,6 +937,8 @@ mod tests {
             other => panic!("No example data for compression type {:?}", other),
         };
         let mut orc_file = OrcFile::open(orc_file_path).unwrap();
+
+        assert_eq!(orc_file.get_field_names(), TS_FIELD_NAMES);
 
         let user_rows = orc_file
             .map_rows(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], |values| {
