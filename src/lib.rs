@@ -1,5 +1,6 @@
 pub mod column;
 pub mod compress;
+pub mod de;
 pub mod parser;
 pub mod proto;
 pub mod rle;
