@@ -7,4 +7,5 @@ pub mod rle;
 pub mod value;
 
 pub use column::Column;
+pub use parser::OrcFile;
 pub use value::Value;
