@@ -28,22 +28,17 @@ fn main() -> Result<(), Error> {
         } => {
             let mut writer = csv::Writer::from_writer(std::io::stdout());
             let mut orc_file = OrcFile::open(&path)?;
-
-            let footer = orc_file.get_footer();
-            let struct_type = footer
-                .get_types()
-                .get(0)
-                .expect("Could not determine struct type");
+            let field_names = orc_file.get_field_names();
 
             let column_indices = match columns.and_then(|value| parse_column_indices(&value)) {
                 Some(ref value) => value.clone(),
-                None => (0..struct_type.get_fieldNames().len()).collect(),
+                None => (0..field_names.len()).collect(),
             };
 
             if header {
                 if let Some(field_names) = column_indices
                     .iter()
-                    .map(|i| struct_type.get_fieldNames().get(*i))
+                    .map(|i| field_names.get(*i))
                     .collect::<Option<Vec<_>>>()
                 {
                     writer.write_record(field_names)?;
@@ -116,7 +111,7 @@ enum Command {
         #[clap(short, long)]
         columns: Option<String>,
         /// Include header
-        #[clap(short, long)]
+        #[clap(long)]
         header: bool,
         /// String to use for null values
         #[clap(long, default_value = "")]
