@@ -8,6 +8,7 @@ use crate::{
     value::Value,
 };
 use protobuf::Message;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -108,6 +109,7 @@ pub struct OrcFile {
     footer: Footer,
     type_kinds: Vec<Type_Kind>,
     field_names: Vec<String>,
+    field_name_map: HashMap<String, usize>,
 }
 
 #[derive(Clone, Default)]
@@ -150,6 +152,17 @@ impl OrcFile {
                 .get_fieldNames()
                 .to_vec();
 
+            let mut field_names_with_indices = field_names
+                .iter()
+                .enumerate()
+                .map(|(i, field_name)| (field_name.to_string(), i))
+                .collect::<Vec<_>>();
+
+            // A field name may be repeated, in which case the map points to the first instance.
+            field_names_with_indices.reverse();
+
+            let field_name_map = field_names_with_indices.into_iter().collect();
+
             Ok(OrcFile {
                 file: Some(file),
                 file_len,
@@ -157,6 +170,7 @@ impl OrcFile {
                 footer,
                 type_kinds,
                 field_names,
+                field_name_map,
             })
         }
     }
@@ -176,6 +190,38 @@ impl OrcFile {
         let stripe_info = self.get_stripe_info()?;
 
         Ok(MappedRows::new(self, stripe_info, columns.to_vec(), f))
+    }
+
+    pub fn deserialize<T: serde::de::DeserializeOwned>(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = Result<T, crate::de::Error>> + '_> {
+        let required_field_names = crate::de::get_field_names::<T>();
+        let mut missing_field_names = vec![];
+        let mut field_name_indices = Vec::with_capacity(required_field_names.len());
+
+        for field_name in required_field_names {
+            match self.field_name_map.get(*field_name) {
+                Some(index) => {
+                    field_name_indices.push(*index);
+                }
+                None => {
+                    missing_field_names.push(field_name.to_string());
+                }
+            }
+        }
+
+        if missing_field_names.is_empty() {
+            match self.map_rows(&field_name_indices, |row| {
+                T::deserialize(&mut crate::de::RowDe::new(row))
+            }) {
+                Ok(iter) => Box::new(iter),
+                Err(error) => Box::new(std::iter::once_with(|| Err(error.into()))),
+            }
+        } else {
+            Box::new(std::iter::once_with(|| {
+                Err(crate::de::ErrorKind::InvalidFieldNames(missing_field_names).into())
+            }))
+        }
     }
 
     fn read_null_runs(
@@ -994,6 +1040,35 @@ mod tests {
             .unwrap();
 
         for (result, expected) in user_rows.iter().zip(load_ts_1k_json()) {
+            assert_eq!(*result, expected);
+        }
+    }
+
+    #[test]
+    fn test_deserialize_ts_1k_zlib() {
+        test_deserialize_ts_1k(CompressionKind::ZLIB);
+    }
+
+    #[test]
+    fn test_deserialize_ts_1k_none() {
+        test_deserialize_ts_1k(CompressionKind::NONE);
+    }
+
+    fn test_deserialize_ts_1k(compression: CompressionKind) {
+        let orc_file_path = match compression {
+            CompressionKind::ZLIB => TS_1K_ZLIB_PATH,
+            CompressionKind::NONE => TS_1K_NONE_PATH,
+            other => panic!("No example data for compression type {:?}", other),
+        };
+
+        let mut orc_file = OrcFile::open(orc_file_path).unwrap();
+
+        let result = orc_file
+            .deserialize::<UserRow>()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        for (result, expected) in result.iter().zip(load_ts_1k_json()) {
             assert_eq!(*result, expected);
         }
     }
