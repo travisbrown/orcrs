@@ -47,7 +47,7 @@ fn main() -> Result<(), Error> {
                 }
             }
 
-            let records = orc_file
+            for record in orc_file
                 .map_rows(&column_indices, |values| {
                     values
                         .iter()
@@ -55,15 +55,14 @@ fn main() -> Result<(), Error> {
                             Value::Null => Ok(null_string_value.clone()),
                             Value::Bool(value) => Ok(value.to_string()),
                             Value::U64(value) => Ok(value.to_string()),
-                            Value::Utf8(value) => Ok(value.to_string()),
+                            Value::Utf8(value) => Ok(escape(value)),
                         })
-                        .collect::<Result<Vec<_>, _>>()
+                        .collect::<Result<Vec<_>, Error>>()
                 })?
-                .collect::<Result<Vec<_>, Error>>()?;
-
-            for record in records {
-                let clean = record.iter().map(|value| escape(value)).collect::<Vec<_>>();
-                writer.write_record(clean)?;
+                .into_iter()
+            {
+                let record = record?;
+                writer.write_record(record)?;
             }
 
             writer.flush()?;
