@@ -82,9 +82,13 @@ fn main() -> Result<(), Error> {
                 println!("Stripe {} info: {:?}\n================", i, stripe_info);
             }
         }
-        Command::Validate { path } => {
-            OrcFile::open(&path)?;
-        }
+        Command::Validate { path } => match OrcFile::open(&path) {
+            Ok(_) => {}
+            Err(error) => {
+                log::error!("Error in {}: {:?}", path, error);
+                std::process::exit(1);
+            }
+        },
     }
 
     Ok(())

@@ -480,14 +480,18 @@ impl OrcFile {
         file.seek(SeekFrom::End(-(bytes_to_read as i64)))?;
         file.read_to_end(&mut buffer)?;
 
-        let postscript_len = buffer[bytes_to_read - 1];
-        let postscript_start = bytes_to_read - 1 - postscript_len as usize;
-        let postscript_bytes = &buffer[postscript_start..bytes_to_read - 1];
+        if bytes_to_read == 0 {
+            Err(Error::InvalidMetadata)
+        } else {
+            let postscript_len = buffer[bytes_to_read - 1];
+            let postscript_start = bytes_to_read - 1 - postscript_len as usize;
+            let postscript_bytes = &buffer[postscript_start..bytes_to_read - 1];
 
-        Ok((
-            PostScript::parse_from_bytes(postscript_bytes)?,
-            postscript_len,
-        ))
+            Ok((
+                PostScript::parse_from_bytes(postscript_bytes)?,
+                postscript_len,
+            ))
+        }
     }
 
     fn read_footer(
