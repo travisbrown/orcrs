@@ -82,6 +82,9 @@ fn main() -> Result<(), Error> {
                 println!("Stripe {} info: {:?}\n================", i, stripe_info);
             }
         }
+        Command::Validate { path } => {
+            OrcFile::open(&path)?;
+        }
     }
 
     Ok(())
@@ -120,6 +123,11 @@ enum Command {
     },
     /// Dump raw info about the ORC file
     Info {
+        /// ORC file
+        path: String,
+    },
+    /// Validate the ORC file footer
+    Validate {
         /// ORC file
         path: String,
     },
