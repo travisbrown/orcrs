@@ -19,15 +19,15 @@ csv = "1.0" # Only for CLI tools
 flate2 = "1.0"
 integer-encoding = "3.0"
 log = "0.4" # Only for CLI tools
-protobuf = "2.25"
+protobuf = "3.1"
 serde = "1"
 serde-aux = "3"
-simplelog = "0.11" # Only for CLI tools
+simplelog = "0.12" # Only for CLI tools
 thiserror = "1.0"
-zstd = "0.10"
+zstd = "0.11"
 
 [build-dependencies]
-protobuf-codegen-pure = "2.25"
+protobuf-codegen = "3.1"
 reqwest = { version = "0.11", features = ["blocking"] }
 
 [dev-dependencies]
