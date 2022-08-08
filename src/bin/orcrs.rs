@@ -47,20 +47,17 @@ fn main() -> Result<(), Error> {
                 }
             }
 
-            for record in orc_file
-                .map_rows(&column_indices, |values| {
-                    values
-                        .iter()
-                        .map(|value| match value {
-                            Value::Null => Ok(null_string_value.clone()),
-                            Value::Bool(value) => Ok(value.to_string()),
-                            Value::U64(value) => Ok(value.to_string()),
-                            Value::Utf8(value) => Ok(escape(value)),
-                        })
-                        .collect::<Result<Vec<_>, Error>>()
-                })?
-                .into_iter()
-            {
+            for record in orc_file.map_rows(&column_indices, |values| {
+                values
+                    .iter()
+                    .map(|value| match value {
+                        Value::Null => Ok(null_string_value.clone()),
+                        Value::Bool(value) => Ok(value.to_string()),
+                        Value::U64(value) => Ok(value.to_string()),
+                        Value::Utf8(value) => Ok(escape(value)),
+                    })
+                    .collect::<Result<Vec<_>, Error>>()
+            })? {
                 let record = record?;
                 writer.write_record(record)?;
             }
@@ -138,7 +135,7 @@ enum Command {
 }
 
 fn escape(input: &str) -> String {
-    input.replace("\n", "\\n")
+    input.replace('\n', "\\n")
 }
 
 fn select_log_level_filter(verbosity: i32) -> LevelFilter {

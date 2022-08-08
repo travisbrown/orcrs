@@ -1,4 +1,4 @@
-use protobuf_codegen_pure::Codegen;
+use protobuf_codegen::Codegen;
 use std::fs::File;
 use std::path::Path;
 

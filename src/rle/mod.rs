@@ -1,4 +1,4 @@
-use crate::proto::orc_proto::ColumnEncoding_Kind;
+use crate::proto::orc_proto::column_encoding::Kind;
 
 pub mod byte;
 pub mod intv1;
@@ -10,13 +10,13 @@ pub enum IntegerRleVersion {
     V2,
 }
 
-impl From<ColumnEncoding_Kind> for IntegerRleVersion {
-    fn from(kind: ColumnEncoding_Kind) -> Self {
+impl From<Kind> for IntegerRleVersion {
+    fn from(kind: Kind) -> Self {
         match kind {
-            ColumnEncoding_Kind::DIRECT => Self::V1,
-            ColumnEncoding_Kind::DIRECT_V2 => Self::V2,
-            ColumnEncoding_Kind::DICTIONARY => Self::V1,
-            ColumnEncoding_Kind::DICTIONARY_V2 => Self::V2,
+            Kind::DIRECT => Self::V1,
+            Kind::DIRECT_V2 => Self::V2,
+            Kind::DICTIONARY => Self::V1,
+            Kind::DICTIONARY_V2 => Self::V2,
         }
     }
 }

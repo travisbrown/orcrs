@@ -1,5 +1,6 @@
 use crate::proto::orc_proto::{
-    ColumnEncoding_Kind, CompressionKind, Footer, PostScript, Stream_Kind, StripeFooter, Type_Kind,
+    column_encoding::Kind as ColumnEncodingKind, stream::Kind as StreamKind,
+    type_::Kind as TypeKind, CompressionKind, Footer, PostScript, StripeFooter,
 };
 use crate::{
     column::{BoolWriter, Column, PresentInfo, PresentInfoWriter},
@@ -26,11 +27,11 @@ pub enum Error {
     #[error("I/O error")]
     Io(#[from] std::io::Error),
     #[error("Protobuf error")]
-    Protobuf(#[from] protobuf::error::ProtobufError),
+    Protobuf(#[from] protobuf::Error),
     #[error("Compression error")]
     Compress(#[from] compress::Error),
     #[error("Unsupported type")]
-    UnsupportedType(Type_Kind),
+    UnsupportedType(TypeKind),
     #[error("Invalid parser state")]
     InvalidState,
     #[error("Invalid ORC file metadata")]
@@ -107,7 +108,7 @@ pub struct OrcFile {
     pub file_len: u64,
     postscript: PostScript,
     footer: Footer,
-    type_kinds: Vec<Type_Kind>,
+    type_kinds: Vec<TypeKind>,
     field_names: Vec<String>,
     field_name_map: HashMap<String, usize>,
 }
@@ -134,22 +135,22 @@ impl OrcFile {
         let mut file = File::open(path)?;
         let (postscript, postscript_len) = Self::read_postscript(&mut file, file_len)?;
 
-        if !SUPPORTED_COMPRESSION_KINDS.contains(&postscript.get_compression()) {
-            Err(compress::Error::UnsupportedCompression(postscript.get_compression()).into())
+        if !SUPPORTED_COMPRESSION_KINDS.contains(&postscript.compression()) {
+            Err(compress::Error::UnsupportedCompression(postscript.compression()).into())
         } else {
             let (footer, file) = Self::read_footer(
                 file,
-                &postscript.get_compression(),
+                &postscript.compression(),
                 postscript_len,
-                postscript.get_footerLength(),
+                postscript.footerLength(),
             )?;
 
             let type_kinds = Self::extract_column_type_kinds(&footer)?;
             let field_names = footer
-                .get_types()
+                .types
                 .get(0)
                 .ok_or(Error::InvalidMetadata)?
-                .get_fieldNames()
+                .fieldNames
                 .to_vec();
 
             let mut field_names_with_indices = field_names
@@ -231,12 +232,8 @@ impl OrcFile {
         row_count: usize,
     ) -> Result<Vec<u64>, Error> {
         let pos = SeekFrom::Start(start);
-        let mut decompressor = Decompressor::open(
-            self.take_file()?,
-            self.postscript.get_compression(),
-            pos,
-            len,
-        )?;
+        let mut decompressor =
+            Decompressor::open(self.take_file()?, self.postscript.compression(), pos, len)?;
         let present_info_writer = PresentInfoWriter::new(row_count);
         let mut byte_writer = ByteWriter::new(present_info_writer);
         std::io::copy(&mut decompressor, &mut byte_writer)?;
@@ -252,12 +249,8 @@ impl OrcFile {
         signed: bool,
     ) -> Result<Vec<u64>, Error> {
         let pos = SeekFrom::Start(start);
-        let mut decompressor = Decompressor::open(
-            self.take_file()?,
-            self.postscript.get_compression(),
-            pos,
-            len,
-        )?;
+        let mut decompressor =
+            Decompressor::open(self.take_file()?, self.postscript.compression(), pos, len)?;
 
         let mut bytes = vec![];
         decompressor.read_to_end(&mut bytes)?;
@@ -298,7 +291,7 @@ impl OrcFile {
                         SeekFrom::Start(stripe.data_start + offset + present_len.unwrap_or(0));
                     let mut decompressor = Decompressor::open(
                         self.take_file()?,
-                        self.postscript.get_compression(),
+                        self.postscript.compression(),
                         data_pos,
                         *data_len,
                     )?;
@@ -377,7 +370,7 @@ impl OrcFile {
                     );
                     let mut decompressor = Decompressor::open(
                         self.take_file()?,
-                        self.postscript.get_compression(),
+                        self.postscript.compression(),
                         pos,
                         *dictionary_data_len,
                     )?;
@@ -421,7 +414,7 @@ impl OrcFile {
                         SeekFrom::Start(stripe.data_start + offset + present_len.unwrap_or(0));
                     let mut decompressor = Decompressor::open(
                         self.take_file()?,
-                        self.postscript.get_compression(),
+                        self.postscript.compression(),
                         pos,
                         *data_len,
                     )?;
@@ -451,7 +444,7 @@ impl OrcFile {
     fn read_message<M: Message>(&mut self, pos: SeekFrom, len: u64) -> Result<M, Error> {
         let file = self.take_file()?;
         let (message, file) =
-            Self::read_message_from_file(file, &self.postscript.get_compression(), pos, len)?;
+            Self::read_message_from_file(file, &self.postscript.compression(), pos, len)?;
         self.file = Some(file);
         Ok(message)
     }
@@ -505,18 +498,18 @@ impl OrcFile {
         Self::read_message_from_file(file, compression, SeekFrom::End(-footer_offset), footer_len)
     }
 
-    fn extract_column_type_kinds(footer: &Footer) -> Result<Vec<Type_Kind>, Error> {
+    fn extract_column_type_kinds(footer: &Footer) -> Result<Vec<TypeKind>, Error> {
         // We currently only support structs with scalar fields (and only a few types).
         footer
             .types
             .iter()
             .skip(1)
             .map(|type_value| {
-                let kind = type_value.get_kind();
-                if kind == Type_Kind::LONG
-                    || kind == Type_Kind::INT
-                    || kind == Type_Kind::STRING
-                    || kind == Type_Kind::BOOLEAN
+                let kind = type_value.kind();
+                if kind == TypeKind::LONG
+                    || kind == TypeKind::INT
+                    || kind == TypeKind::STRING
+                    || kind == TypeKind::BOOLEAN
                 {
                     Ok(kind)
                 } else {
@@ -540,10 +533,9 @@ impl OrcFile {
 
         for i in 0..stripe_count {
             let stripe_info = &self.footer.stripes[i];
-            let footer_start = stripe_info.get_offset()
-                + stripe_info.get_indexLength()
-                + stripe_info.get_dataLength();
-            let footer_len = stripe_info.get_footerLength();
+            let footer_start =
+                stripe_info.offset() + stripe_info.indexLength() + stripe_info.dataLength();
+            let footer_len = stripe_info.footerLength();
 
             let stripe_footer = self.read_message(SeekFrom::Start(footer_start), footer_len)?;
 
@@ -561,29 +553,29 @@ impl OrcFile {
             .enumerate()
             .map(|(i, stripe_footer)| {
                 let stripe_orig_info = &self.footer.stripes[i];
-                let row_count = stripe_orig_info.get_numberOfRows() as usize;
-                let data_start = stripe_orig_info.get_offset() + stripe_orig_info.get_indexLength();
-                let data_len = stripe_orig_info.get_dataLength();
+                let row_count = stripe_orig_info.numberOfRows() as usize;
+                let data_start = stripe_orig_info.offset() + stripe_orig_info.indexLength();
+                let data_len = stripe_orig_info.dataLength();
 
                 let column_count = stripe_footer.columns.len();
                 let mut column_data_stream_infos =
                     vec![ColumnDataStreamInfo::default(); column_count];
 
-                for stream in stripe_footer.get_streams() {
-                    let kind = stream.get_kind();
-                    let column_id = stream.get_column() as usize;
-                    let length = stream.get_length();
+                for stream in &stripe_footer.streams {
+                    let kind = stream.kind();
+                    let column_id = stream.column() as usize;
+                    let length = stream.length();
                     match kind {
-                        Stream_Kind::DATA => {
+                        StreamKind::DATA => {
                             column_data_stream_infos[column_id - 1].data_len = length;
                         }
-                        Stream_Kind::LENGTH => {
+                        StreamKind::LENGTH => {
                             column_data_stream_infos[column_id - 1].length_len = length;
                         }
-                        Stream_Kind::PRESENT => {
+                        StreamKind::PRESENT => {
                             column_data_stream_infos[column_id - 1].present_len = length;
                         }
-                        Stream_Kind::DICTIONARY_DATA => {
+                        StreamKind::DICTIONARY_DATA => {
                             column_data_stream_infos[column_id - 1].dictionary_data_len = length;
                         }
                         _ => {}
@@ -593,18 +585,18 @@ impl OrcFile {
                 let mut current_offset = 0;
 
                 let columns = stripe_footer
-                    .get_columns()
+                    .columns
                     .iter()
                     .skip(1) // Skip the struct column
                     .zip(&self.type_kinds)
                     .zip(column_data_stream_infos)
                     .map(|((column_encoding, type_kind), stream_info)| {
-                        let result = match (type_kind, column_encoding.get_kind()) {
-                            (Type_Kind::LONG | Type_Kind::INT, encoding_kind) => {
+                        let result = match (type_kind, column_encoding.kind()) {
+                            (TypeKind::LONG | TypeKind::INT, encoding_kind) => {
                                 if stream_info.dictionary_data_len != 0
                                     || stream_info.length_len != 0
-                                    || (encoding_kind != ColumnEncoding_Kind::DIRECT
-                                        && encoding_kind != ColumnEncoding_Kind::DIRECT_V2)
+                                    || (encoding_kind != ColumnEncodingKind::DIRECT
+                                        && encoding_kind != ColumnEncodingKind::DIRECT_V2)
                                 {
                                     Err(Error::InvalidMetadata)
                                 } else {
@@ -620,7 +612,7 @@ impl OrcFile {
                                     })
                                 }
                             }
-                            (Type_Kind::BOOLEAN, ColumnEncoding_Kind::DIRECT) => {
+                            (TypeKind::BOOLEAN, ColumnEncodingKind::DIRECT) => {
                                 if stream_info.dictionary_data_len != 0
                                     || stream_info.length_len != 0
                                 {
@@ -638,9 +630,9 @@ impl OrcFile {
                                 }
                             }
                             (
-                                Type_Kind::STRING,
-                                encoding_kind @ (ColumnEncoding_Kind::DIRECT
-                                | ColumnEncoding_Kind::DIRECT_V2),
+                                TypeKind::STRING,
+                                encoding_kind @ (ColumnEncodingKind::DIRECT
+                                | ColumnEncodingKind::DIRECT_V2),
                             ) => {
                                 if stream_info.dictionary_data_len != 0 {
                                     Err(Error::InvalidMetadata)
@@ -659,9 +651,9 @@ impl OrcFile {
                                 }
                             }
                             (
-                                Type_Kind::STRING,
-                                encoding_kind @ (ColumnEncoding_Kind::DICTIONARY
-                                | ColumnEncoding_Kind::DICTIONARY_V2),
+                                TypeKind::STRING,
+                                encoding_kind @ (ColumnEncodingKind::DICTIONARY
+                                | ColumnEncodingKind::DICTIONARY_V2),
                             ) => Ok(ColumnInfo::Utf8Dictionary {
                                 offset: current_offset,
                                 present_len: if stream_info.present_len == 0 {
@@ -673,7 +665,7 @@ impl OrcFile {
                                 dictionary_data_len: stream_info.dictionary_data_len,
                                 length_len: stream_info.length_len,
                                 version: encoding_kind.into(),
-                                dictionary_size: column_encoding.get_dictionarySize(),
+                                dictionary_size: column_encoding.dictionarySize(),
                             }),
                             (kind, _) => Err(Error::UnsupportedType(*kind)),
                         };
@@ -820,7 +812,7 @@ mod tests {
         expected.set_footerLength(1065);
         expected.set_compression(CompressionKind::ZSTD);
         expected.set_compressionBlockSize(262144);
-        expected.set_version(vec![0, 12]);
+        expected.version = vec![0, 12];
         expected.set_metadataLength(909);
         expected.set_writerVersion(9);
         expected.set_magic("ORC".to_string());
@@ -833,9 +825,9 @@ mod tests {
         let orc_file = OrcFile::open(TS_10K_EXAMPLE_PATH).unwrap();
         let footer = orc_file.get_footer();
 
-        assert_eq!(footer.get_headerLength(), 3);
-        assert_eq!(footer.get_contentLength(), 937322);
-        assert_eq!(footer.get_stripes().len(), 1);
+        assert_eq!(footer.headerLength(), 3);
+        assert_eq!(footer.contentLength(), 937322);
+        assert_eq!(footer.stripes.len(), 1);
     }
 
     #[test]
