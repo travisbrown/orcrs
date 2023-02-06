@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use orcrs::{parser::OrcFile, value::Value};
 use simplelog::LevelFilter;
 
@@ -95,20 +95,18 @@ fn main() -> Result<(), Error> {
 #[clap(name = "orcrs", about, version, author)]
 struct Opts {
     /// Level of verbosity
-    #[clap(short, long, parse(from_occurrences))]
+    #[clap(short, long, global = true, action = ArgAction::Count)]
     verbose: i32,
     #[clap(subcommand)]
     command: Command,
 }
-
-const EXPORT_FORMATS: &[&str] = &["csv"];
 
 #[derive(Parser)]
 enum Command {
     /// Export the contents of the ORC file
     Export {
         /// Export format
-        #[clap(short, long, default_value = "csv", possible_values(EXPORT_FORMATS))]
+        #[clap(short, long, default_value = "csv", value_parser(["csv"]))]
         format: String,
         /// Column indices (comma-separated list of numbers)
         #[clap(short, long)]

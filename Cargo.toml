@@ -14,17 +14,17 @@ exclude = [ ".github/*", ".codecov.yml", "examples/*", "test-gen/*", "scripts/*"
 
 [dependencies]
 bit-vec = "0.6"
-clap = { version = "3.0", features = ["derive"] } # Only for CLI tools
+clap = { version = "4.0", features = ["derive"] } # Only for CLI tools
 csv = "1.0" # Only for CLI tools
 flate2 = "1.0"
 integer-encoding = "3.0"
 log = "0.4" # Only for CLI tools
 protobuf = "3.1"
 serde = "1"
-serde-aux = "3"
+serde-aux = "4"
 simplelog = "0.12" # Only for CLI tools
 thiserror = "1.0"
-zstd = "0.11"
+zstd = "0.12"
 
 [build-dependencies]
 protobuf-codegen = "3.1"
